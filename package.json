@@ -1,0 +1,14 @@
+{
+	"name": "@thedannicraft/tag-bumper",
+	"version": "1.0.0",
+	"description": "Bump git tags",
+	"main": "index.js",
+	"bin": {
+		"tag-bumper": "./index.js"
+	},
+	"dependencies": {
+		"@inquirer/prompts": "^5.3.2",
+		"chalk": "^4.1.2",
+		"simple-git": "^3.25.0"
+	}
+}
