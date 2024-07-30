@@ -2,7 +2,7 @@
 
 const simpleGit = require('simple-git');
 const { select, confirm } = require('@inquirer/prompts');
-const { ExitPromptError } = require('@inquirer/core')
+const { ExitPromptError } = require('@inquirer/core');
 const chalk = require('chalk');
 
 const git = simpleGit();
@@ -86,7 +86,11 @@ async function forcePushTag(tag) {
 }
 
 async function updateTag(tag, commitHash) {
-    console.log(chalk.green(`Updating tag ${tag} to point to commit ${shortenCommitHash(commitHash)}`));
+    const oldCommitHash = await getCommitOfTag(tag);
+    const shortOldCommitHash = shortenCommitHash(oldCommitHash);
+    const shortNewCommitHash = shortenCommitHash(commitHash);
+
+    console.log(chalk.green(`Updating tag ${tag} to point to commit ${shortNewCommitHash}`));
     try {
         // Delete the existing tag locally
         await deleteLocalTag(tag);
@@ -94,6 +98,8 @@ async function updateTag(tag, commitHash) {
         await git.tag([tag, commitHash]);
         // Force push the tag to the remote repository
         await forcePushTag(tag);
+        console.log(chalk.green(`Tag ${tag} updated from ${shortOldCommitHash} to ${shortNewCommitHash}`));
+        return { tag, oldCommitHash, newCommitHash: commitHash };
     } catch (err) {
         console.error(chalk.red('Error updating tag.'));
         console.error(err);
@@ -102,7 +108,11 @@ async function updateTag(tag, commitHash) {
 }
 
 async function updateRootTag(rootTag, commitHash) {
-    console.log(chalk.green(`Updating root tag ${rootTag} to point to commit ${shortenCommitHash(commitHash)}`));
+    const oldCommitHash = await getCommitOfTag(rootTag);
+    const shortOldCommitHash = shortenCommitHash(oldCommitHash);
+    const shortNewCommitHash = shortenCommitHash(commitHash);
+
+    console.log(chalk.green(`Updating root tag ${rootTag} to point to commit ${shortNewCommitHash}`));
     try {
         // Delete the existing root tag locally
         await deleteLocalTag(rootTag);
@@ -110,6 +120,8 @@ async function updateRootTag(rootTag, commitHash) {
         await git.tag([rootTag, commitHash]);
         // Force push the root tag to the remote repository
         await forcePushTag(rootTag);
+        console.log(chalk.green(`Root tag ${rootTag} updated from ${shortOldCommitHash} to ${shortNewCommitHash}`));
+        return { tag: rootTag, oldCommitHash, newCommitHash: commitHash };
     } catch (err) {
         console.error(chalk.red('Error updating root tag.'));
         console.error(err);
@@ -118,6 +130,7 @@ async function updateRootTag(rootTag, commitHash) {
 }
 
 async function main() {
+    const changes = [];
     try {
         if (!(await isGitRepo())) return;
 
@@ -163,7 +176,36 @@ async function main() {
             });
 
             if (confirmed) {
-                await updateTag(selectedTag, latestCommitHash);
+                const rootTag = getRootTag(tags);
+                if (rootTag) {
+                    const rootTagCommitHash = await getCommitOfTag(rootTag);
+                    const selectedTagCommitHash = await getCommitOfTag(selectedTag);
+
+                    if (rootTagCommitHash === selectedTagCommitHash) {
+                        const updatedTag = await updateTag(selectedTag, latestCommitHash);
+                        changes.push(updatedTag);
+
+                        console.log(chalk.green(`Tag ${selectedTag} was updated. Found a matching root tag ${rootTag}.`));
+
+                        const updateRootTagConfirmed = await confirm({
+                            message: `Do you also want to update the root tag to point to the updated ${selectedTag} (${shortCommitHash})?`,
+                            default: true
+                        });
+
+                        if (updateRootTagConfirmed) {
+                            const updatedRootTag = await updateRootTag(rootTag, latestCommitHash);
+                            changes.push(updatedRootTag); // Include root tag update in changes
+                        } else {
+                            console.log(chalk.yellow('Root tag update skipped.'));
+                        }
+                    } else {
+                        const updatedTag = await updateTag(selectedTag, latestCommitHash);
+                        changes.push(updatedTag);
+                    }
+                } else {
+                    const updatedTag = await updateTag(selectedTag, latestCommitHash);
+                    changes.push(updatedTag);
+                }
             } else {
                 console.log(chalk.yellow('Tag update canceled.'));
             }
@@ -204,20 +246,29 @@ async function main() {
             });
 
             if (confirmed) {
-                await updateRootTag(rootTag, commitHash);
+                const updatedRootTag = await updateRootTag(rootTag, commitHash);
+                changes.push(updatedRootTag); // Include root tag update in changes
             } else {
-                console.log(chalk.yellow('Tag update canceled.'));
+                console.log(chalk.yellow('Root tag update canceled.'));
             }
         } else {
             console.log(chalk.red('Invalid action selected.'));
             process.exit(1);
+        }
+
+        // Print the summary of changes only once
+        if (changes.length > 0) {
+            console.log(chalk.magenta('Summary of changes:'));
+            changes.forEach(change => {
+                console.log(chalk.magenta(`Tag ${change.tag}: ${shortenCommitHash(change.oldCommitHash)} -> ${shortenCommitHash(change.newCommitHash)}`));
+            });
         }
     } catch (err) {
         if (err instanceof ExitPromptError) {
             console.log(chalk.yellow('Canceled by User'));
         } else {
             console.error(chalk.red('An unexpected error occurred.'));
-            console.error(err.name);
+            console.error(err);
         }
         process.exit(1);
     }
