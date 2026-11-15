@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const simpleGit = require('simple-git');
+const { simpleGit } = require('simple-git');
 const { select, confirm } = require('@inquirer/prompts');
 const { ExitPromptError } = require('@inquirer/core');
-const chalk = require('chalk');
+const chalk = require('chalk').default;
 
 const git = simpleGit();
 
